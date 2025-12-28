@@ -1,12 +1,20 @@
-# task model
+"""
+Task Database Model.
+Represents a single unit of work in the system.
+"""
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
 from .base import Base
 
 
 class Task(Base):
+    """
+    Represents a task with title, description, and status.
+    """
+    # pylint: disable=too-few-public-methods
+
     __tablename__ = "tasks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -18,15 +26,16 @@ class Task(Base):
     completed = Column(Boolean, default=False)
     priority = Column(String, default="Medium")  # z.B. High, Medium, Low
     category = Column(String, default="General")
-    created_at = Column(DateTime, default=lambda:  datetime.now(timezone.utc))
+    # UTC Zeit verwenden
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Fremdschlüssel
-    # 1. Ein Task MUSS einen Owner haben (nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    # 2. Ein Task KANN ein Projekt haben (nullable=True ist Standard, aber hier implizit)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
 
     # Beziehungen
     owner = relationship("User", back_populates="tasks")
     project = relationship("Project", back_populates="tasks")
+
+    def __repr__(self):
+        return f"<Task(id={self.id}, title='{self.title}', completed={self.completed})>"
