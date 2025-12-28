@@ -8,8 +8,52 @@ from app.models.project import Project
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskOut
 from app.oauth2 import get_current_user
+from app.services.ai_services import analyze_task_with_ai
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+class AISentence(BaseModel):
+    text: str
+    project_id: int
+
+@router.post("/generate", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+def create_task_with_ai(
+        payload: AISentence,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """
+    Takes a sentece ("Buy milk tomorrow")
+    analysied by Gemini and creates the task")
+    """
+    # 1. check the project
+    project = db.query(Project).filter(Project.id == payload.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # 2. Ask Gemini
+    ai_data = analyze_task_with_ai(payload.text)
+
+    # 3. create the task with the data from Gemini
+    new_task = Task(
+        title=ai_data.get("summary"),
+        description=ai_data.get("description"),
+        priority=ai_data.get("priority"),
+        category=ai_data.get("category"),
+        owner_id=current_user.id,
+        project_id=payload.project_id
+    )
+
+    db.add(new_task)
+    db.commit()
+    db.refresh(new_task)
+
+    # DEBUG PRINT: Sehen wir das Objekt im Log?
+    print(f"Task created: {new_task.title}, ID: {new_task.id}")
+
+    # WICHTIG: Das return muss auf der gleichen Höhe sein wie db.refresh!
+    return new_task
 
 
 # 1. Neuen Task erstellen (Geschützt)
