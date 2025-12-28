@@ -8,10 +8,10 @@ from datetime import datetime
 # Wenn die Datei im selben Ordner liegt, entferne den Punkt vor 'base' in deinen Models temporär
 # oder sorge dafür, dass es als Package läuft.
 # Für diesen Test gehen wir davon aus, dass alles importierbar ist.
-from base import Base
-from user import User
-from project import Project
-from task import Task
+from app.models.base import Base
+from app.models.user import User
+from app.models.project import Project
+from app.models.task import Task
 
 # 1. SETUP: Die "Wegwerf-Datenbank" im Arbeitsspeicher
 # sqlite:///:memory: bedeutet: Es wird keine Datei auf der Festplatte erstellt!
