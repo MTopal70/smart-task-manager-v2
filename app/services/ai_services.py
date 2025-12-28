@@ -21,7 +21,7 @@ def analyze_task_with_ai(text: str) -> dict:
 
     try:
         # we use the fast flash-model
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-flash-latest')
 
         # the prompt is the task text
         prompt = f"""

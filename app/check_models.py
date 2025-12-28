@@ -1,7 +1,7 @@
 import google.generativeai as genai
 
 # HIER DEINEN KEY REINKOPIEREN
-MY_KEY = "AIzaSyDKgx4Qg2lkx2G4en5Czc6yR6yZVhDiftI"
+MY_KEY = ""
 
 genai.configure(api_key=MY_KEY)
 

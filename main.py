@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager # <--- NEU
 from app.routes import project_routes
 from app.routes import user_routes
 from app.routes import task_routes
+from app.routes import ai_routes
 
 # 1. Der neue "Lifespan" Manager (ersetzt startup event)
 @asynccontextmanager
@@ -22,6 +23,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(user_routes.router)
 app.include_router(project_routes.router)
 app.include_router(task_routes.router)
+app.include_router(ai_routes.router)
 
 @app.get("/")
 def read_root():
