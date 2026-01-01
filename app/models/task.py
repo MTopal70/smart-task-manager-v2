@@ -2,11 +2,10 @@
 Task Database Model.
 Represents a single unit of work in the system.
 """
-from datetime import datetime, timezone
-
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from .base import Base
+from datetime import datetime, timezone
+from app.models.base import Base
 
 
 class Task(Base):
@@ -19,7 +18,9 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False, index=True)
-    description = Column(String)
+    description = Column(String, nullable=True)
+
+    status = Column(String, default="todo")
 
     # V2 Features
     due_date = Column(DateTime, nullable=True)

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="/" class="text-decoration-none text-muted"><i class="bi bi-arrow-left"></i> Zurück zum Kalender</a>
+            <h2 class="display-6 mt-2">{{ project.title }}</h2>
+            <p class="text-muted">{{ project.description }}</p>
+        </div>
+        <span class="badge bg-secondary">Projekt ID: {{ project.id }}</span>
+    </div>
+
+    <div class="row h-100">
+
+        <div class="col-md-4">
+            <div class="card bg-light h-100 shadow-sm">
+                <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
+                    <span>To Do 📌</span>
+                    <button class="btn btn-sm btn-light text-danger py-0" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                        <i class="bi bi-plus-lg"></i> Neu
+                    </button>
+                </div>
+                <div class="card-body kanban-column" id="todo" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    {% for task in todo %}
+                        {% include "partials/task_card.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-light h-100 shadow-sm">
+                <div class="card-header bg-warning text-dark fw-bold">In Arbeit 🚧</div>
+                <div class="card-body kanban-column" id="in_progress" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    {% for task in progress %}
+                        {% include "partials/task_card.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-light h-100 shadow-sm">
+                <div class="card-header bg-success text-white fw-bold">Fertig ✅</div>
+                <div class="card-body kanban-column" id="done" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    {% for task in done %}
+                        {% include "partials/task_card.html" %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addTaskModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Neuen Task hinzufügen</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/projects/{{ project.id }}/tasks/create" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Titel</label>
+                        <input type="text" name="title" class="form-control" placeholder="z.B. Getränke kaufen" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Beschreibung (Optional)</label>
+                        <textarea name="description" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-danger">Hinzufügen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .kanban-column {
+        min-height: 500px;
+        transition: background-color 0.2s;
+    }
+    .kanban-column.drag-over {
+        background-color: #e9ecef;
+        border: 2px dashed #adb5bd;
+    }
+    .task-card {
+        cursor: grab;
+        transition: transform 0.1s;
+    }
+    .task-card:active {
+        cursor: grabbing;
+        transform: rotate(2deg);
+    }
+</style>
+
+<script>
+    // === Drag & Drop Logik ===
+
+    function allowDrop(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.add('drag-over');
+    }
+
+    function drag(ev) {
+        ev.dataTransfer.setData("text", ev.target.id);
+    }
+
+    function drop(ev) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+
+        var data = ev.dataTransfer.getData("text");
+        var taskCard = document.getElementById(data);
+
+        var targetColumn = ev.target;
+        // Sicherstellen, dass wir im .card-body landen
+        while (!targetColumn.classList.contains('kanban-column')) {
+            targetColumn = targetColumn.parentElement;
+        }
+
+        targetColumn.appendChild(taskCard);
+
+        var newStatus = targetColumn.id; // "todo", "in_progress", "done"
+        var taskId = data.replace("task-", "");
+
+        saveMove(taskId, newStatus);
+    }
+
+    // Drag-Over Effekt entfernen beim Verlassen
+    document.querySelectorAll('.kanban-column').forEach(col => {
+        col.addEventListener('dragleave', (e) => {
+            e.currentTarget.classList.remove('drag-over');
+        });
+    });
+
+    function saveMove(taskId, newStatus) {
+        var formData = new FormData();
+        formData.append('status', newStatus);
+
+        fetch(`/tasks/${taskId}/move`, {
+            method: 'POST',
+            body: formData
+        }).then(response => {
+            if (response.ok) {
+                console.log("Status gespeichert: " + newStatus);
+            } else {
+                alert("Fehler beim Speichern!");
+            }
+        });
+    }
+</script>
+{% endblock %}

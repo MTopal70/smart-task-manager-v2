@@ -1,24 +1,118 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="text-center mt-5">
+<div class="text-center mt-4">
     {% if request.session.get('user') %}
-        <h1 class="display-4">Willkommen zurück! 🚀</h1>
-        <p class="lead">Hier ist dein Smart Task Manager.</p>
-        
-        <div class="card shadow-sm mt-5 p-4 mx-auto" style="max-width: 600px;">
-            <h3>✨ Was liegt an?</h3>
-            <p class="text-muted">Lass die KI deine Tasks organisieren.</p>
-            <button class="btn btn-success btn-lg mt-2">
-                <i class="bi bi-magic"></i> Task generieren
-            </button>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <a href="/?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+            <h2 class="display-6 mb-0">{{ month_name }} 📅</h2>
+            <div class="d-flex gap-2">
+                <a href="/?year={{ next_year }}&month={{ next_month }}" class="btn btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+                <button type="button" class="btn btn-success ms-3" data-bs-toggle="modal" data-bs-target="#projectModal">
+                    <i class="bi bi-folder-plus"></i> Neues Projekt
+                </button>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-bordered mb-0" style="table-layout: fixed;">
+                    <thead class="table-light">
+                        <tr><th>Mo</th><th>Di</th><th>Mi</th><th>Do</th><th>Fr</th><th>Sa</th><th>So</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for week in month_days %}
+                        <tr style="height: 120px;">
+                            {% for day in week %}
+                            <td class="align-top text-start p-2 {% if day == current_day and view_month == current_month %}table-primary{% endif %}">
+                                {% if day != 0 %}
+                                    <span class="fw-bold {% if day == current_day and view_month == current_month %}text-primary{% else %}text-muted{% endif %}">{{ day }}</span>
+
+                                    <div class="mt-1" style="max-height: 90px; overflow-y: auto;">
+                                        {% if day in projects_by_date %}
+                                            {% for proj in projects_by_date[day] %}
+                                            <a href="/projects/{{ proj.id }}/board" class="d-block badge bg-primary text-decoration-none text-truncate mb-1 p-2 shadow-sm" title="{{ proj.title }}">
+                                                📁 {{ proj.title }}
+                                            </a>
+                                            {% endfor %}
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <span class="bg-light d-block h-100"></span>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     {% else %}
-        <h1 class="display-4">Organisiere dein Leben.</h1>
-        <p class="lead mb-4">Mit der Power von KI.</p>
+        <h1 class="display-4 mt-5">Willkommen beim TFS-Planer</h1>
+        <p class="lead mb-4">Professionelles Projektmanagement mit Kalender & Kanban.</p>
         <a href="/login" class="btn btn-primary btn-lg px-5">Login starten</a>
     {% endif %}
 </div>
-{% endblock %}
 
+<div class="modal fade" id="projectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Neues Projekt starten</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/projects/create_web" method="post">
+                <div class="modal-body text-start">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Projekt Titel</label>
+                        <input type="text" name="title" class="form-control" placeholder="z.B. Website Relaunch" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Startdatum</label>
+                        <input type="date" name="start_date" class="form-control" value="{{ view_year }}-{{ '%02d' % view_month }}-{{ '%02d' % current_day }}" required>
+                    </div>
+
+                    <div class="p-3 bg-light border rounded mt-3">
+                        <label class="form-label text-primary fw-bold">
+                            <i class="bi bi-magic"></i> KI-Assistent
+                        </label>
+                        <textarea name="ai_instructions" id="aiInput" class="form-control border-primary" rows="3"
+                                  placeholder="Beschreibe dein Projekt (z.B. 'Ich will eine Marketing-Kampagne für E-Bikes planen'). Die KI erstellt dann automatisch alle Tasks!"></textarea>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+
+                    <button type="submit" class="btn btn-secondary" id="createProjectBtn">
+                        <i class="bi bi-folder-plus"></i> Manuell anlegen
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const aiInput = document.getElementById('aiInput');
+    const submitBtn = document.getElementById('createProjectBtn');
+
+    aiInput.addEventListener('input', function() {
+        if (this.value.trim().length > 0) {
+            // Wenn Text da ist -> Magischer Button
+            submitBtn.innerHTML = '<i class="bi bi-stars"></i> Zaubern & Erstellen';
+            submitBtn.className = 'btn btn-warning text-dark fw-bold shadow';
+        } else {
+            // Wenn leer -> Normaler Button
+            submitBtn.innerHTML = '<i class="bi bi-folder-plus"></i> Manuell anlegen';
+            submitBtn.className = 'btn btn-secondary';
+        }
+    });
+</script>
+
+{% endblock %}

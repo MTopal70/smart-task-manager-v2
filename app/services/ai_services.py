@@ -1,90 +1,70 @@
-# ai service
-
-import google.generativeai as genai
-from app.config import settings
+import os
 import json
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-# 1.configure Gemini
-genai.configure(api_key=settings.gemini_api_key)
+# .env laden
+load_dotenv()
 
-def analyze_task_with_ai(text: str) -> dict:
+# API Key holen
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    print("❌ WARNUNG: Kein GEMINI_API_KEY gefunden! ")
+
+# Gemini konfigurieren
+genai.configure(api_key=api_key)
+
+
+def analyze_task_with_ai(text_input: str):
     """
-    Sends the Task_text to google Gemini API and returns the response
+    Nimmt eine Projektbeschreibung (z.B. "Urlaub planen")
+    und liefert eine LISTE von Aufgaben zurück.
     """
-
-    fallback_result = {
-        "summary": text[:50],  # Titel kürzen
-        "description": text,
-        "priority": "Medium",
-        "category": "General"
-    }
-
     try:
-        # we use the fast flash-model
-        model = genai.GenerativeModel('gemini-flash-latest')
+        #model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        model = genai.GenerativeModel("gemini-flash-latest")
 
-        # the prompt is the task text
+        # Der Prompt zwingt die KI, eine saubere Liste zu liefern
         prompt = f"""
-        Du bist ein intelligenter Task-Manager-Assistens.
-        Analysiere den folgenden User-Input für eine neue Aufgabe: "{text}"
-        
-        Bitte extrahiere Informationen und antworte NUR mit einem validen JSON-Objekte.
-        Kein Markdown, kein Text davor oder danach.
-        
-        Das JSON muss diese Felder haben:
-        - "summary": Eine kurze, knackige Zusammenfassung des Tasks (als Titel).
-        - "description": Eine etwas detailliertere Beschreibung (oder der Originaltext).
-        - "priority": Entweder "High", "Medium" oder "Low". (Entscheide basierend auf Dringlichkeit).
-        - "category": Eine passende Kategorie (z.B. "Work", "Personal", "Shopping", "Learning", "Health").
-        
-        Beispiel Input: "Morgen unbedingt Milch kaufen"
-        Beispiel Output: {{"summary": "Milch kaufen", "description": "Morgen unbedingt Milch kaufen", "priority": "High", "category": "Shopping"}}
+        Du bist ein erfahrener Projektmanager.
+        Zerlege das folgende Projekt in 3 bis 6 konkrete Einzelaufgaben (Tasks).
+
+        Projekt: "{text_input}"
+
+        Antworte AUSSCHLIESSLICH mit gültigem JSON in diesem Format (eine Liste von Objekten):
+        [
+            {{
+                "title": "Titel der Aufgabe",
+                "estimated_time": "Geschätzte Dauer (z.B. 2h)"
+            }},
+            ...
+        ]
+        Kein Markdown, kein Text davor oder danach. Nur das JSON-Array.
         """
 
-        # sent the prompt
         response = model.generate_content(prompt)
+        raw_text = response.text.strip()
 
-        # DEBUG: Schauen wir mal, was Gemini antwortet (im Log sichtbar)
-        print(f"DEBUG Gemini Response: {response.text}")
-
-        # Bereinigen (Markdown entfernen)
-        cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
-
-        if not cleaned_text:
-            print("Gemini hat leeren Text zurückgegeben!")
-            return fallback_result
+        # Markdown-Code-Blöcke entfernen, falls Gemini welche macht
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
 
         # JSON parsen
-        task_data = json.loads(cleaned_text)
+        tasks_list = json.loads(raw_text)
 
-        # Zusammenfügen (Fallback + echte Daten)
-        final_result = {**fallback_result, **task_data}
-
-        return final_result
+        # Sicherheits-Check: Ist es wirklich eine Liste?
+        if isinstance(tasks_list, list):
+            print(f"✅ KI hat {len(tasks_list)} Aufgaben generiert.")
+            return tasks_list
+        else:
+            print("⚠️ KI hat keine Liste zurückgegeben. Packe es in eine Liste.")
+            return [tasks_list]  # Notfall-Lösung
 
     except Exception as e:
-        print(f"AI Error: {e}")
-        # WICHTIG: Im Fehlerfall geben wir IMMER die Fallback-Daten zurück, damit die App nicht abstürzt!
-        return fallback_result
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        print(f"❌ Fehler im KI-Service: {e}")
+        # Fallback, damit nichts abstürzt
+        return [{"title": "KI-Fehler: Bitte manuell prüfen", "estimated_time": "0h"}]

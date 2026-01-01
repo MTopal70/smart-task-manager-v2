@@ -1,6 +1,6 @@
 # task routes
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -12,12 +12,56 @@ from app.schemas.task import TaskCreate, TaskOut
 from app.oauth2 import get_current_user
 from app.services.ai_services import analyze_task_with_ai
 from pydantic import BaseModel
+from starlette.responses import RedirectResponse
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 class AISentence(BaseModel):
     text: str
     project_id: int
+
+# NEUE ROUTE FÜR DAS WEB-FORMULAR
+@router.post("/generate_web")
+async def create_task_ai_web(
+        request: Request,
+        description: str = Form(...),
+        db: Session = Depends(get_db)
+):
+    # 1. User aus der Browser-Session holen
+    user_info = request.session.get('user')
+    if not user_info:
+        return RedirectResponse(url="/login", status_code=303)
+
+    # User in DB finden (über Auth0 ID)
+    # Annahme: Du hast ein Feld 'auth0_sub' oder ähnlich im User Model.
+    # Falls du nur 'email' hast, nimm das.
+    # Hier vereinfacht: Wir suchen den User über die Email aus der Session
+    user_email = user_info.get('email')
+    user = db.query(User).filter(User.email == user_email).first()
+
+    if not user:
+        # Fallback: Falls User nicht gefunden, zur Sicherheit Login
+        return RedirectResponse(url="/login", status_code=303)
+
+    # 2. KI fragen (wir nutzen deine existierende Funktion!)
+    # Falls du keinen Projekt-ID hast, nehmen wir ein Standard-Projekt oder None
+    ai_data = analyze_task_with_ai(description)
+
+    # 3. Task speichern
+    new_task = Task(
+        title=ai_data.get("summary"),
+        description=ai_data.get("description"),
+        priority=ai_data.get("priority"),
+        category=ai_data.get("category"),
+        owner_id=user.id,
+        project_id=None  # Oder eine Default-ID setzen, falls Pflicht
+    )
+
+    db.add(new_task)
+    db.commit()
+
+    # 4. Zurück zum Dashboard
+    return RedirectResponse(url="/", status_code=303)
 
 @router.post("/generate", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 def create_task_with_ai(

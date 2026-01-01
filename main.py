@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
 
 # 2. Wir übergeben lifespan an die App
 # app = FastAPI(lifespan=lifespan)
-app = FastAPI(title="Smart Task Manager V2")
+app = FastAPI(title="Smart Task Manager V2", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key)
 # 3. Router einbinden
 app.include_router(user_routes.router)
@@ -33,9 +33,9 @@ app.include_router(auth.router)
 app.include_router(web_auth.router)
 app.include_router(views.router)
 
-@app.get("/")
-def read_root():
-    return {"message": "Smart Task Manager V2 API is running with AI 🧠"}
+#@app.get("/")
+#def read_root():
+#    return {"message": "Smart Task Manager V2 API is running with AI 🧠"}
 
 if __name__ == "__main__":
     import uvicorn
