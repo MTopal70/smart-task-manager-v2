@@ -8,11 +8,19 @@
             <h2 class="display-6 mt-2">{{ project.title }}</h2>
             <p class="text-muted">{{ project.description }}</p>
         </div>
-        <span class="badge bg-secondary">Projekt ID: {{ project.id }}</span>
+
+        <div>
+            <span class="badge bg-secondary me-2">Projekt ID: {{ project.id }}</span>
+
+            <form action="/projects/{{ project.id }}/delete" method="post" class="d-inline" onsubmit="return confirm('Projekt wirklich unwiderruflich löschen? Alle Tasks werden entfernt!');">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i> Projekt löschen
+                </button>
+            </form>
+        </div>
     </div>
 
     <div class="row h-100">
-
         <div class="col-md-4">
             <div class="card bg-light h-100 shadow-sm">
                 <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
@@ -60,22 +68,81 @@
                 <h5 class="modal-title">Neuen Task hinzufügen</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+
             <form action="/projects/{{ project.id }}/tasks/create" method="post">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Titel</label>
                         <input type="text" name="title" class="form-control" placeholder="z.B. Getränke kaufen" required>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Priorität</label>
+                        <select name="priority" class="form-select">
+                            <option value="Easy">Easy 🟢</option>
+                            <option value="Medium" selected>Medium 🟡</option>
+                            <option value="Urgent">Urgent 🔴</option>
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label">Beschreibung (Optional)</label>
                         <textarea name="description" class="form-control" rows="2"></textarea>
                     </div>
                 </div>
+
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
                     <button type="submit" class="btn btn-danger">Hinzufügen</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editTaskModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Task bearbeiten</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form id="editTaskForm" action="" method="post">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Titel</label>
+                        <input type="text" name="title" id="editTaskTitle" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Priorität</label>
+                        <select name="priority" id="editTaskPriority" class="form-select">
+                            <option value="Easy">Easy 🟢</option>
+                            <option value="Medium">Medium 🟡</option>
+                            <option value="Urgent">Urgent 🔴</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Beschreibung</label>
+                        <textarea name="description" id="editTaskDesc" class="form-control" rows="4"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-danger" onclick="confirmDelete()">
+                        <i class="bi bi-trash"></i> Löschen
+                    </button>
+
+                    <div>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                        <button type="submit" class="btn btn-primary">Speichern</button>
+                    </div>
+                </div>
+            </form>
+
+            <form id="deleteTaskForm" action="" method="post" style="display:none;"></form>
         </div>
     </div>
 </div>
@@ -100,7 +167,7 @@
 </style>
 
 <script>
-    // === Drag & Drop Logik ===
+    // === 1. Drag & Drop Logik ===
 
     function allowDrop(ev) {
         ev.preventDefault();
@@ -108,7 +175,8 @@
     }
 
     function drag(ev) {
-        ev.dataTransfer.setData("text", ev.target.id);
+        // Speichert die ID des gezogenen Elements
+        ev.dataTransfer.setData("text", ev.currentTarget.id);
     }
 
     function drop(ev) {
@@ -118,18 +186,17 @@
         var data = ev.dataTransfer.getData("text");
         var taskCard = document.getElementById(data);
 
-        var targetColumn = ev.target;
-        // Sicherstellen, dass wir im .card-body landen
-        while (!targetColumn.classList.contains('kanban-column')) {
-            targetColumn = targetColumn.parentElement;
+        // Ziel finden (auch wenn man auf eine andere Karte droppt)
+        var targetColumn = ev.target.closest('.kanban-column');
+
+        if (targetColumn) {
+            targetColumn.appendChild(taskCard);
+
+            var newStatus = targetColumn.id;
+            var taskId = data.replace("task-", "");
+
+            saveMove(taskId, newStatus);
         }
-
-        targetColumn.appendChild(taskCard);
-
-        var newStatus = targetColumn.id; // "todo", "in_progress", "done"
-        var taskId = data.replace("task-", "");
-
-        saveMove(taskId, newStatus);
     }
 
     // Drag-Over Effekt entfernen beim Verlassen
@@ -153,6 +220,35 @@
                 alert("Fehler beim Speichern!");
             }
         });
+    }
+
+    // === 2. Edit & Delete Logik (NEU mit data-attributes) ===
+
+    function openEditFromButton(btnElement) {
+        // Daten aus den HTML-Attributen lesen
+        var id = btnElement.getAttribute('data-id');
+        var title = btnElement.getAttribute('data-title');
+        var desc = btnElement.getAttribute('data-desc');
+        var priority = btnElement.getAttribute('data-priority');
+
+        // Modal Felder füllen
+        document.getElementById('editTaskTitle').value = title;
+        document.getElementById('editTaskDesc').value = desc;
+        document.getElementById('editTaskPriority').value = priority; // Dropdown setzen
+
+        // Formular URLs setzen
+        document.getElementById('editTaskForm').action = "/tasks/" + id + "/update";
+        document.getElementById('deleteTaskForm').action = "/tasks/" + id + "/delete";
+
+        // Modal anzeigen
+        var myModal = new bootstrap.Modal(document.getElementById('editTaskModal'));
+        myModal.show();
+    }
+
+    function confirmDelete() {
+        if(confirm("Möchtest du diesen Task wirklich unwiderruflich löschen?")) {
+            document.getElementById('deleteTaskForm').submit();
+        }
     }
 </script>
 {% endblock %}

@@ -117,6 +117,7 @@ async def create_task_in_project(
         project_id: int,
         title: str = Form(...),
         description: str = Form(None),
+        priority: str = Form("Medium"),
         request: Request = None,
         db: Session = Depends(get_db)
 ):
@@ -130,6 +131,7 @@ async def create_task_in_project(
     new_task = Task(
         title=title,
         description=description,
+        priority=priority,
         status="todo",  # Kommt immer erst ins Backlog
         project_id=project_id,
         owner_id=user.id
@@ -139,4 +141,25 @@ async def create_task_in_project(
 
     # Zurück zum Board
     return RedirectResponse(url=f"/projects/{project_id}/board", status_code=303)
+
+
+# --- Projekt LÖSCHEN ---
+@router.post("/projects/{project_id}/delete")
+async def delete_project(project_id: int, request: Request, db: Session = Depends(get_db)):
+    user_info = request.session.get('user')
+    if not user_info: return RedirectResponse(url="/login", status_code=303)
+
+    # Projekt suchen
+    project = db.query(Project).filter(Project.id == project_id).first()
+
+    if project:
+        # Hinweis: Wenn in der Datenbank "cascade='all, delete'" eingestellt ist,
+        # werden Tasks automatisch mitgelöscht. Falls nicht, müssten wir sie hier manuell löschen.
+        # db.query(Task).filter(Task.project_id == project_id).delete()
+
+        db.delete(project)
+        db.commit()
+
+    # Zurück zur Übersicht
+    return RedirectResponse(url="/", status_code=303)
 

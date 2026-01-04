@@ -1,8 +1,7 @@
-# task routes
-
 from fastapi import APIRouter, Depends, Form, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+from starlette.responses import RedirectResponse, JSONResponse  # <--- WICHTIG: JSONResponse hat gefehlt
 
 from app.database import get_db
 from app.models.task import Task
@@ -12,76 +11,172 @@ from app.schemas.task import TaskCreate, TaskOut
 from app.oauth2 import get_current_user
 from app.services.ai_services import analyze_task_with_ai
 from pydantic import BaseModel
-from starlette.responses import RedirectResponse
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
 
 class AISentence(BaseModel):
     text: str
     project_id: int
 
-# NEUE ROUTE FÜR DAS WEB-FORMULAR
+
+# =================================================================
+# 1. HILFSFUNKTIONEN (Für Web-Session Handling)
+# =================================================================
+
+def get_local_user_from_session(request: Request, db: Session):
+    """
+    Holt den User aus der Datenbank basierend auf der Auth0 Browser-Session.
+    """
+    auth0_user = request.session.get('user')
+    if not auth0_user:
+        return None
+
+    # Wir suchen den User über die Email (die von Auth0 kommt)
+    user_email = auth0_user.get('email')
+    if not user_email:
+        return None
+
+    return db.query(User).filter(User.email == user_email).first()
+
+
+# =================================================================
+# 2. WEB ROUTES (Für dein HTML Frontend / Browser)
+# Diese Routen nutzen Cookies (Sessions) und Form-Data
+# =================================================================
+
+# --- A. Drag & Drop Status Update ---
+@router.post("/{task_id}/move")
+async def move_task_web(
+        task_id: int,
+        status: str = Form(...),
+        request: Request = None,
+        db: Session = Depends(get_db)
+):
+    # 1. User checken
+    user = get_local_user_from_session(request, db)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+    # 2. Task suchen
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        return JSONResponse({"error": "Task not found"}, status_code=404)
+
+    # 3. Gehört der Task mir?
+    if task.owner_id != user.id:
+        return JSONResponse({"error": "Forbidden"}, status_code=403)
+
+    # 4. Speichern
+    task.status = status
+    db.commit()
+
+    return JSONResponse({"success": True, "new_status": status})
+
+
+# --- B. Task Bearbeiten (Titel/Beschreibung) ---
+@router.post("/{task_id}/update")
+async def update_task_web(
+        task_id: int,
+        title: str = Form(...),
+        description: str = Form(None),
+        priority: str = Form(...),
+        request: Request = None,
+        db: Session = Depends(get_db)
+):
+    user = get_local_user_from_session(request, db)
+    if not user: return RedirectResponse(url="/login", status_code=303)
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    # Sicherheits-Check
+    if not task or task.owner_id != user.id:
+        return RedirectResponse(url="/", status_code=303)
+
+    # Update
+    task.title = title
+    task.description = description
+    task.priority = priority
+    db.commit()
+
+    # Zurück zum Board des Projekts
+    return RedirectResponse(url=f"/projects/{task.project_id}/board", status_code=303)
+
+
+# --- C. Task Löschen ---
+@router.post("/{task_id}/delete")
+async def delete_task_web(
+        task_id: int,
+        request: Request,
+        db: Session = Depends(get_db)
+):
+    user = get_local_user_from_session(request, db)
+    if not user: return RedirectResponse(url="/login", status_code=303)
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+
+    # Sicherheits-Check
+    if not task or task.owner_id != user.id:
+        return RedirectResponse(url="/", status_code=303)
+
+    # Projekt ID merken für den Redirect
+    redir_project_id = task.project_id
+
+    db.delete(task)
+    db.commit()
+
+    if redir_project_id:
+        return RedirectResponse(url=f"/projects/{redir_project_id}/board", status_code=303)
+    else:
+        return RedirectResponse(url="/", status_code=303)
+
+
+# --- D. KI Generierung über Web Formular ---
 @router.post("/generate_web")
 async def create_task_ai_web(
         request: Request,
         description: str = Form(...),
         db: Session = Depends(get_db)
 ):
-    # 1. User aus der Browser-Session holen
-    user_info = request.session.get('user')
-    if not user_info:
-        return RedirectResponse(url="/login", status_code=303)
+    user = get_local_user_from_session(request, db)
+    if not user: return RedirectResponse(url="/login", status_code=303)
 
-    # User in DB finden (über Auth0 ID)
-    # Annahme: Du hast ein Feld 'auth0_sub' oder ähnlich im User Model.
-    # Falls du nur 'email' hast, nimm das.
-    # Hier vereinfacht: Wir suchen den User über die Email aus der Session
-    user_email = user_info.get('email')
-    user = db.query(User).filter(User.email == user_email).first()
-
-    if not user:
-        # Fallback: Falls User nicht gefunden, zur Sicherheit Login
-        return RedirectResponse(url="/login", status_code=303)
-
-    # 2. KI fragen (wir nutzen deine existierende Funktion!)
-    # Falls du keinen Projekt-ID hast, nehmen wir ein Standard-Projekt oder None
+    # KI fragen
     ai_data = analyze_task_with_ai(description)
 
-    # 3. Task speichern
+    # Task speichern
     new_task = Task(
-        title=ai_data.get("summary"),
-        description=ai_data.get("description"),
-        priority=ai_data.get("priority"),
-        category=ai_data.get("category"),
+        title=ai_data.get("summary", "Neuer Task"),
+        description=ai_data.get("description", ""),
+        priority=ai_data.get("priority", "Mittel"),
+        category=ai_data.get("category", "General"),
         owner_id=user.id,
-        project_id=None  # Oder eine Default-ID setzen, falls Pflicht
+        project_id=None  # Vorerst ohne Projekt, oder man übergibt es im Formular
     )
 
     db.add(new_task)
     db.commit()
 
-    # 4. Zurück zum Dashboard
     return RedirectResponse(url="/", status_code=303)
 
+
+# =================================================================
+# 3. API ROUTES (Für Mobile Apps / Externe Clients)
+# Diese Routen nutzen Bearer Token Auth (get_current_user)
+# =================================================================
+
 @router.post("/generate", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
-def create_task_with_ai(
+def create_task_with_ai_api(
         payload: AISentence,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    """
-    Takes a sentece ("Buy milk tomorrow")
-    analysied by Gemini and creates the task")
-    """
-    # 1. check the project
     project = db.query(Project).filter(Project.id == payload.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # 2. Ask Gemini
     ai_data = analyze_task_with_ai(payload.text)
 
-    # 3. create the task with the data from Gemini
     new_task = Task(
         title=ai_data.get("summary"),
         description=ai_data.get("description"),
@@ -94,27 +189,19 @@ def create_task_with_ai(
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
-
-    # DEBUG PRINT: Sehen wir das Objekt im Log?
-    print(f"Task created: {new_task.title}, ID: {new_task.id}")
-
-    # WICHTIG: Das return muss auf der gleichen Höhe sein wie db.refresh!
     return new_task
 
 
-# 1. Neuen Task erstellen (Geschützt)
 @router.post("/", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
-def create_task(
+def create_task_api(
         task_data: TaskCreate,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    # Prüfen, ob das Projekt existiert und dem User gehört (optional, aber sauber)
     project = db.query(Project).filter(Project.id == task_data.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Task erstellen
     new_task = Task(
         **task_data.dict(),
         owner_id=current_user.id
@@ -126,20 +213,17 @@ def create_task(
     return new_task
 
 
-# 2. Alle Tasks des eingeloggten Users lesen
 @router.get("/", response_model=List[TaskOut])
-def get_my_tasks(
+def get_my_tasks_api(
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ):
-    # Nur Tasks zurückgeben, die MIR gehören
     tasks = db.query(Task).filter(Task.owner_id == current_user.id).all()
     return tasks
 
 
-# 3. Einen spezifischen Task löschen
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(
+def delete_task_api(
         task_id: int,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user)
@@ -150,7 +234,6 @@ def delete_task(
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Sicherheits-Check: Gehört der Task mir?
     if task.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this task")
 
