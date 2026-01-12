@@ -97,20 +97,6 @@ async def get_project_board(request: Request, project_id: int, db: Session = Dep
     })
 
 
-# --- NEU: Task verschieben (API für Drag & Drop) ---
-@router.post("/tasks/{task_id}/move")
-async def move_task(task_id: int, status: str = Form(...), db: Session = Depends(get_db)):
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Status aktualisieren
-    task.status = status
-    db.commit()
-
-    return JSONResponse(content={"success": True, "new_status": status})
-
-
 # --- NEU: Einzelnen Task zum Projekt hinzufügen ---
 @router.post("/projects/{project_id}/tasks/create")
 async def create_task_in_project(

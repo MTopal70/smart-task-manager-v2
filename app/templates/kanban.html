@@ -103,8 +103,8 @@
 <div class="modal fade" id="editTaskModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">Task bearbeiten</h5>
+            <div class="modal-header bg-primary text-white" id="editModalHeader">
+                <h5 class="modal-title" id="editModalTitle">Task bearbeiten</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
 
@@ -115,7 +115,7 @@
                         <input type="text" name="title" id="editTaskTitle" class="form-control" required>
                     </div>
 
-                    <div class="mb-3">
+                     <div class="mb-3">
                         <label class="form-label">Priorität</label>
                         <select name="priority" id="editTaskPriority" class="form-select">
                             <option value="Easy">Easy 🟢</option>
@@ -131,13 +131,13 @@
                 </div>
 
                 <div class="modal-footer d-flex justify-content-between">
-                    <button type="button" class="btn btn-outline-danger" onclick="confirmDelete()">
+                    <button type="button" class="btn btn-outline-danger" id="modalDeleteBtn" onclick="confirmDelete()">
                         <i class="bi bi-trash"></i> Löschen
                     </button>
 
                     <div>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                        <button type="submit" class="btn btn-primary">Speichern</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Schließen</button>
+                        <button type="submit" class="btn btn-primary" id="modalSaveBtn">Speichern</button>
                     </div>
                 </div>
             </form>
@@ -193,6 +193,7 @@
             targetColumn.appendChild(taskCard);
 
             var newStatus = targetColumn.id;
+            // Wir entfernen "task-" um nur die ID zu haben (z.B. "5")
             var taskId = data.replace("task-", "");
 
             saveMove(taskId, newStatus);
@@ -206,49 +207,123 @@
         });
     });
 
-    function saveMove(taskId, newStatus) {
+    // --- HIER IST DIE WICHTIGE ÄNDERUNG ---
+
+function saveMove(taskId, newStatus) {
         var formData = new FormData();
         formData.append('status', newStatus);
 
         fetch(`/tasks/${taskId}/move`, {
             method: 'POST',
             body: formData
-        }).then(response => {
-            if (response.ok) {
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
                 console.log("Status gespeichert: " + newStatus);
+
+                // 1. Elemente suchen
+                var lockIcon = document.getElementById(`lock-icon-${taskId}`);
+                var editBtn = document.getElementById(`edit-btn-${taskId}`);
+
+                // --- HIER IST DAS NEUE: Das KARTEN-ELEMENT selbst aktualisieren ---
+                var cardElement = document.getElementById(`task-${taskId}`);
+                if (cardElement) {
+                    // Wir überschreiben das data-locked Attribut mit dem neuen Wert vom Server
+                    // Damit weiß der Doppelklick sofort Bescheid!
+                    cardElement.setAttribute('data-locked', data.is_locked);
+                }
+                // ------------------------------------------------------------------
+
+                // 2. Visuelle Logik (Icon & Button)
+                if (data.is_locked) {
+                    // SPERREN
+                    if (lockIcon) lockIcon.style.display = 'inline-block';
+                    if (editBtn) editBtn.style.display = 'none';
+                } else {
+                    // ENTSPERREN
+                    if (lockIcon) lockIcon.style.display = 'none';
+                    if (editBtn) editBtn.style.display = 'inline-block';
+                }
+
             } else {
                 alert("Fehler beim Speichern!");
             }
-        });
+        })
+        .catch(error => console.error('Error:', error));
     }
 
-    // === 2. Edit & Delete Logik (NEU mit data-attributes) ===
+    // === 2. Edit & Delete Logik ===
 
-    function openEditFromButton(btnElement) {
-        // Daten aus den HTML-Attributen lesen
-        var id = btnElement.getAttribute('data-id');
-        var title = btnElement.getAttribute('data-title');
-        var desc = btnElement.getAttribute('data-desc');
-        var priority = btnElement.getAttribute('data-priority');
+   // --- JavaScript in kanban.html ---
 
-        // Modal Felder füllen
-        document.getElementById('editTaskTitle').value = title;
-        document.getElementById('editTaskDesc').value = desc;
-        document.getElementById('editTaskPriority').value = priority; // Dropdown setzen
+function openTaskModal(cardElement) {
+    // 1. Daten aus den Attributen der Karte lesen
+    var id = cardElement.getAttribute('data-id');
+    var title = cardElement.getAttribute('data-title');
+    var desc = cardElement.getAttribute('data-desc');
+    var priority = cardElement.getAttribute('data-priority');
 
-        // Formular URLs setzen
-        document.getElementById('editTaskForm').action = "/tasks/" + id + "/update";
-        document.getElementById('deleteTaskForm').action = "/tasks/" + id + "/delete";
+    // Prüfen ob gesperrt ("true" string zu boolean konvertieren)
+    var isLocked = cardElement.getAttribute('data-locked') === 'true';
 
-        // Modal anzeigen
-        var myModal = new bootstrap.Modal(document.getElementById('editTaskModal'));
-        myModal.show();
+    // 2. Elemente im Modal greifen
+    var titleInput = document.getElementById('editTaskTitle');
+    var descInput = document.getElementById('editTaskDesc');
+    var prioInput = document.getElementById('editTaskPriority');
+    var saveBtn = document.getElementById('modalSaveBtn');
+    var deleteBtn = document.getElementById('modalDeleteBtn');
+    var modalTitle = document.getElementById('editModalTitle');
+    var modalHeader = document.getElementById('editModalHeader');
+
+    // 3. Werte füllen
+    titleInput.value = title;
+    descInput.value = desc;
+    prioInput.value = priority;
+
+    // Form Action URLs setzen
+    document.getElementById('editTaskForm').action = "/tasks/" + id + "/update";
+    document.getElementById('deleteTaskForm').action = "/tasks/" + id + "/delete";
+
+    // 4. Logik: Read-Only vs Edit Mode
+    if (isLocked) {
+        // --- VIEW MODE (Gesperrt) ---
+        modalTitle.innerText = "Task Details (Gesperrt)";
+
+        // Farbe ändern (Optional: Grau statt Blau)
+        modalHeader.classList.remove('bg-primary');
+        modalHeader.classList.add('bg-secondary');
+
+        // Felder deaktivieren
+        titleInput.disabled = true;
+        descInput.disabled = true;
+        prioInput.disabled = true;
+
+        // Buttons verstecken
+        saveBtn.style.display = 'none';
+        deleteBtn.style.display = 'none'; // Auch Löschen im Modal verbieten? (Geschmackssache)
+
+    } else {
+        // --- EDIT MODE (Normal) ---
+        modalTitle.innerText = "Task bearbeiten";
+
+        // Farbe zurück auf Blau
+        modalHeader.classList.remove('bg-secondary');
+        modalHeader.classList.add('bg-primary');
+
+        // Felder aktivieren
+        titleInput.disabled = false;
+        descInput.disabled = false;
+        prioInput.disabled = false;
+
+        // Buttons zeigen
+        saveBtn.style.display = 'inline-block';
+        deleteBtn.style.display = 'inline-block';
     }
 
-    function confirmDelete() {
-        if(confirm("Möchtest du diesen Task wirklich unwiderruflich löschen?")) {
-            document.getElementById('deleteTaskForm').submit();
-        }
-    }
+    // 5. Modal anzeigen
+    var myModal = new bootstrap.Modal(document.getElementById('editTaskModal'));
+    myModal.show();
+}
 </script>
 {% endblock %}

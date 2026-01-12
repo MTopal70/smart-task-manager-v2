@@ -46,6 +46,12 @@ def get_local_user_from_session(request: Request, db: Session):
 # =================================================================
 
 # --- A. Drag & Drop Status Update ---
+# app/routes/task_routes.py
+
+# Suche nach: @router.post("/{task_id}/move")
+# app/routes/task_routes.py
+
+# Suche nach: @router.post("/{task_id}/move")
 @router.post("/{task_id}/move")
 async def move_task_web(
         task_id: int,
@@ -53,26 +59,40 @@ async def move_task_web(
         request: Request = None,
         db: Session = Depends(get_db)
 ):
-    # 1. User checken
+    # 1. Validierung
     user = get_local_user_from_session(request, db)
-    if not user:
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not user: return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-    # 2. Task suchen
     task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        return JSONResponse({"error": "Task not found"}, status_code=404)
+    if not task: return JSONResponse({"error": "Task not found"}, status_code=404)
+    if task.owner_id != user.id: return JSONResponse({"error": "Forbidden"}, status_code=403)
 
-    # 3. Gehört der Task mir?
-    if task.owner_id != user.id:
-        return JSONResponse({"error": "Forbidden"}, status_code=403)
+    # 2. Status säubern
+    clean_status = status.strip().lower()
 
-    # 4. Speichern
-    task.status = status
+    # 3. Zuweisen
+    task.status = clean_status
+
+    # 4. DIE LOGIK (Jetzt wird sie funktionieren!)
+    if clean_status == "done":
+        print(f"Task {task_id} -> DONE. Sperre zu.") # Kleiner Print zur Sicherheit
+        task.is_locked = True
+        task.completed = True
+    else:
+        print(f"Task {task_id} -> {clean_status}. Sperre auf.")
+        task.is_locked = False
+        task.completed = False
+
+    # 5. Speichern
     db.commit()
+    db.refresh(task)
 
-    return JSONResponse({"success": True, "new_status": status})
-
+    # 6. Antwort mit Lock-Status
+    return JSONResponse({
+        "success": True,
+        "new_status": task.status,
+        "is_locked": task.is_locked
+    })
 
 # --- B. Task Bearbeiten (Titel/Beschreibung) ---
 @router.post("/{task_id}/update")

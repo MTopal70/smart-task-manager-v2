@@ -21,6 +21,7 @@ class Task(Base):
     description = Column(String, nullable=True)
 
     status = Column(String, default="todo")
+    is_locked = Column(Boolean, default=False)
 
     # V2 Features
     due_date = Column(DateTime, nullable=True)
